@@ -35,10 +35,12 @@ jobs:
       - name: Build web
         run: |
           REPO="${{ github.event.repository.name }}"
+          # --pwa-strategy none: no service worker → browsers fetch fresh JS after each deploy
+          # (default offline-first SW caches old bundles on phones long after you ship updates).
           if [[ "$REPO" == *.github.io ]]; then
-            flutter build web --release --base-href "/"
+            flutter build web --release --base-href "/" --pwa-strategy none
           else
-            flutter build web --release --base-href "/$REPO/"
+            flutter build web --release --base-href "/$REPO/" --pwa-strategy none
           fi
 
       - uses: actions/upload-pages-artifact@v3

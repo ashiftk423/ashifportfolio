@@ -18,6 +18,8 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <!-- Hint revalidation for the HTML shell (CDN/browser may still cache assets by URL/hash). -->
+  <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <meta name="description" content="A new Flutter project.">
 
   <!-- iOS meta tags & icons -->
@@ -34,13 +36,22 @@
 </head>
 <body>
   <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
+    Unregister legacy Flutter service workers, then load bootstrap so no stale SW intercepts JS (mobile cache fix).
+    GitHub Actions uses `flutter build web --pwa-strategy none` so new builds do not register a caching SW.
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    (async function () {
+      try {
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(function (r) { return r.unregister(); }));
+        }
+      } catch (_) {}
+      var s = document.createElement("script");
+      s.src = "flutter_bootstrap.js";
+      s.async = true;
+      document.body.appendChild(s);
+    })();
+  </script>
 </body>
 </html>
