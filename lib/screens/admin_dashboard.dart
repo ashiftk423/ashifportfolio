@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/portfolio_models.dart';
 import '../services/firebase_service.dart';
+import '../widgets/keyboard_scroll_shortcuts.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -69,14 +70,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
         ),
       ),
-      body: [
-        _InfoEditor(service: _service),
-        _ProjectsEditor(service: _service),
-        _SkillsEditor(service: _service),
-        _SocialsEditor(service: _service),
-        _CertificatesEditor(service: _service),
-        _ExperienceEditor(service: _service),
-      ][_selectedTab],
+      body: IndexedStack(
+        index: _selectedTab,
+        sizing: StackFit.expand,
+        children: [
+          _InfoEditor(service: _service),
+          _ProjectsEditor(service: _service),
+          _SkillsEditor(service: _service),
+          _SocialsEditor(service: _service),
+          _CertificatesEditor(service: _service),
+          _ExperienceEditor(service: _service),
+        ],
+      ),
     );
   }
 }
@@ -95,17 +100,30 @@ class _InfoEditorState extends State<_InfoEditor> {
   final _title = TextEditingController();
   final _desc = TextEditingController();
   final _email = TextEditingController();
-  final _phone = TextEditingController();
-  final _whatsapp = TextEditingController();
+  final List<TextEditingController> _phoneCtrls = [TextEditingController()];
+  final List<TextEditingController> _whatsappCtrls = [TextEditingController()];
   String _photoUrl = '';
   String _cvUrl = '';
   bool _saving = false;
   bool _loaded = false;
+  final _scrollController = ScrollController();
+
+  void _disposeCtrlList(List<TextEditingController> list) {
+    for (final c in list) {
+      c.dispose();
+    }
+    list.clear();
+  }
 
   @override
   void dispose() {
-    _name.dispose(); _title.dispose(); _desc.dispose();
-    _email.dispose(); _phone.dispose(); _whatsapp.dispose();
+    _name.dispose();
+    _title.dispose();
+    _desc.dispose();
+    _email.dispose();
+    _disposeCtrlList(_phoneCtrls);
+    _disposeCtrlList(_whatsappCtrls);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -116,8 +134,18 @@ class _InfoEditorState extends State<_InfoEditor> {
     _title.text = info.title;
     _desc.text = info.description;
     _email.text = info.email;
-    _phone.text = info.phone;
-    _whatsapp.text = info.whatsapp;
+    _disposeCtrlList(_phoneCtrls);
+    _phoneCtrls.addAll(
+      info.phones.isEmpty
+          ? [TextEditingController()]
+          : info.phones.map((e) => TextEditingController(text: e)),
+    );
+    _disposeCtrlList(_whatsappCtrls);
+    _whatsappCtrls.addAll(
+      info.whatsapps.isEmpty
+          ? [TextEditingController()]
+          : info.whatsapps.map((e) => TextEditingController(text: e)),
+    );
     _photoUrl = info.photoUrl;
     _cvUrl = info.cvUrl;
   }
@@ -136,13 +164,23 @@ class _InfoEditorState extends State<_InfoEditor> {
       if (result == null || result.files.isEmpty) return;
       final file = result.files.first;
       if (file.bytes == null) return;
+      final previousUrl = _photoUrl;
       setState(() => _saving = true);
       final url = await widget.service.uploadFile('info/photos/', file.bytes!, '${DateTime.now().millisecondsSinceEpoch}_${file.name}');
-      setState(() { _photoUrl = url; _saving = false; });
-      _showSnack('Photo uploaded!');
+      await widget.service.mergeProfileFields({'photoUrl': url});
+      if (previousUrl.isNotEmpty && previousUrl != url) {
+        await widget.service.deleteStorageFileByUrl(previousUrl);
+      }
+      if (mounted) {
+        setState(() {
+          _photoUrl = url;
+          _saving = false;
+        });
+        _showSnack('Photo updated and saved!');
+      }
     } catch (e) {
-      setState(() => _saving = false);
-      _showSnack('Error uploading photo: $e');
+      if (mounted) setState(() => _saving = false);
+      if (mounted) _showSnack('Error uploading photo: $e');
     }
   }
 
@@ -152,23 +190,43 @@ class _InfoEditorState extends State<_InfoEditor> {
       if (result == null || result.files.isEmpty) return;
       final file = result.files.first;
       if (file.bytes == null) return;
+      final previousUrl = _cvUrl;
       setState(() => _saving = true);
       final url = await widget.service.uploadFile('info/cv/', file.bytes!, '${DateTime.now().millisecondsSinceEpoch}_${file.name}');
-      setState(() { _cvUrl = url; _saving = false; });
-      _showSnack('CV uploaded!');
+      await widget.service.mergeProfileFields({'cvUrl': url});
+      if (previousUrl.isNotEmpty && previousUrl != url) {
+        await widget.service.deleteStorageFileByUrl(previousUrl);
+      }
+      if (mounted) {
+        setState(() {
+          _cvUrl = url;
+          _saving = false;
+        });
+        _showSnack('CV updated and saved!');
+      }
     } catch (e) {
-      setState(() => _saving = false);
-      _showSnack('Error uploading CV: $e');
+      if (mounted) setState(() => _saving = false);
+      if (mounted) _showSnack('Error uploading CV: $e');
     }
   }
 
-  Future<void> _save() async {
+  List<String> _trimmedNonEmpty(List<TextEditingController> ctrls) {
+    return ctrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+  }
+
+  Future<void> _save({required bool maintenanceMode}) async {
     try {
       setState(() => _saving = true);
       await widget.service.updateProfileInfo(ProfileInfo(
-        name: _name.text, title: _title.text, description: _desc.text,
-        email: _email.text, phone: _phone.text, whatsapp: _whatsapp.text,
-        photoUrl: _photoUrl, cvUrl: _cvUrl,
+        name: _name.text,
+        title: _title.text,
+        description: _desc.text,
+        email: _email.text,
+        phones: _trimmedNonEmpty(_phoneCtrls),
+        whatsapps: _trimmedNonEmpty(_whatsappCtrls),
+        photoUrl: _photoUrl,
+        cvUrl: _cvUrl,
+        maintenanceMode: maintenanceMode,
       ));
       setState(() => _saving = false);
       _showSnack('Info saved!');
@@ -178,13 +236,120 @@ class _InfoEditorState extends State<_InfoEditor> {
     }
   }
 
+  Widget _repeatableContactFields({
+    required String heading,
+    required String subtitle,
+    required String fieldBaseLabel,
+    required IconData icon,
+    required List<TextEditingController> ctrls,
+    required VoidCallback onAdd,
+    required void Function(int index) onRemove,
+  }) {
+    final narrow = MediaQuery.of(context).size.width < 520;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(heading, style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: GoogleFonts.poppins(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 10),
+        ...List.generate(ctrls.length, (i) {
+          final label = ctrls.length > 1 ? '$fieldBaseLabel ${i + 1}' : fieldBaseLabel;
+          if (narrow) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _field(ctrls[i], label, icon),
+                  if (ctrls.length > 1)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => onRemove(i),
+                        icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.redAccent),
+                        label: Text('Remove', style: GoogleFonts.poppins(color: Colors.redAccent, fontSize: 12)),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _field(ctrls[i], label, icon)),
+                if (ctrls.length > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 8),
+                    child: IconButton(
+                      tooltip: 'Remove',
+                      onPressed: () => onRemove(i),
+                      icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+        TextButton.icon(
+          onPressed: onAdd,
+          icon: const Icon(Icons.add_circle_outline, color: Color(0xFF38BDF8), size: 22),
+          label: Text('Add number', style: GoogleFonts.poppins(color: const Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  Widget _multiPhoneFields() {
+    return _repeatableContactFields(
+      heading: 'Phone numbers',
+      subtitle: 'Add all numbers you want visitors to see (include country code, e.g. +91, +966).',
+      fieldBaseLabel: 'Phone',
+      icon: Icons.phone,
+      ctrls: _phoneCtrls,
+      onAdd: () => setState(() => _phoneCtrls.add(TextEditingController())),
+      onRemove: (i) {
+        if (_phoneCtrls.length <= 1) return;
+        setState(() {
+          _phoneCtrls[i].dispose();
+          _phoneCtrls.removeAt(i);
+        });
+      },
+    );
+  }
+
+  Widget _multiWhatsappFields() {
+    return _repeatableContactFields(
+      heading: 'WhatsApp numbers',
+      subtitle: 'Each line is a full WhatsApp number with country code.',
+      fieldBaseLabel: 'WhatsApp',
+      icon: Icons.chat,
+      ctrls: _whatsappCtrls,
+      onAdd: () => setState(() => _whatsappCtrls.add(TextEditingController())),
+      onRemove: (i) {
+        if (_whatsappCtrls.length <= 1) return;
+        setState(() {
+          _whatsappCtrls[i].dispose();
+          _whatsappCtrls.removeAt(i);
+        });
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<ProfileInfo>(
       stream: widget.service.getProfileInfo(),
       builder: (context, snap) {
         if (snap.hasData) _loadData(snap.data!);
-        return SingleChildScrollView(
+        return KeyboardScrollShortcuts(
+          controller: _scrollController,
+          child: SingleChildScrollView(
+            controller: _scrollController,
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -200,6 +365,7 @@ class _InfoEditorState extends State<_InfoEditor> {
                       child: _photoUrl.isNotEmpty
                           ? Image.network(
                               _photoUrl,
+                              key: ValueKey<String>(_photoUrl),
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stack) => const Icon(Icons.broken_image, size: 40, color: Colors.white54),
                             )
@@ -229,14 +395,53 @@ class _InfoEditorState extends State<_InfoEditor> {
               _field(_title, 'Title / Role', Icons.work),
               _field(_desc, 'Description', Icons.description, maxLines: 4),
               _field(_email, 'Email', Icons.email),
-              _field(_phone, 'Phone', Icons.phone),
-              _field(_whatsapp, 'WhatsApp Number (with country code)', Icons.chat),
+              _multiPhoneFields(),
+              _multiWhatsappFields(),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: SwitchListTile.adaptive(
+                  value: snap.data?.maintenanceMode ?? false,
+                  onChanged: _saving
+                      ? null
+                      : (v) async {
+                          try {
+                            await widget.service.mergeProfileFields({'maintenanceMode': v});
+                            if (mounted) {
+                              _showSnack(
+                                v ? 'Maintenance banner ON for visitors' : 'Maintenance banner OFF',
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) _showSnack('Error: $e');
+                          }
+                        },
+                  title: Text(
+                    'Public maintenance banner',
+                    style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+                  ),
+                  subtitle: Text(
+                    'Playful “under construction” layer on the live site. Portfolio stays fully usable.',
+                    style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+                  ),
+                  activeThumbColor: const Color(0xFF38BDF8),
+                  activeTrackColor: const Color(0xFF38BDF8).withValues(alpha: 0.35),
+                ),
+              ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _saving ? null : _save,
+                  onPressed: _saving
+                      ? null
+                      : () => _save(maintenanceMode: snap.data?.maintenanceMode ?? false),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF38BDF8),
                     foregroundColor: Colors.black87,
@@ -249,6 +454,7 @@ class _InfoEditorState extends State<_InfoEditor> {
               ),
             ],
           ),
+        ),
         );
       },
     );
@@ -264,6 +470,14 @@ class _ProjectsEditor extends StatefulWidget {
 }
 
 class _ProjectsEditorState extends State<_ProjectsEditor> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _showProjectForm({Project? project}) {
     showDialog(
       context: context,
@@ -298,7 +512,10 @@ class _ProjectsEditorState extends State<_ProjectsEditor> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
+              child: KeyboardScrollShortcuts(
+                controller: _scrollController,
+                child: ListView.builder(
+                  controller: _scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: projects.length,
                 itemBuilder: (context, i) {
@@ -350,6 +567,7 @@ class _ProjectsEditorState extends State<_ProjectsEditor> {
                     ),
                   ).animate().fadeIn().slideX(begin: 0.1);
                 },
+                ),
               ),
             ),
           ],
@@ -371,6 +589,7 @@ class _ProjectFormDialogState extends State<_ProjectFormDialog> {
   late final TextEditingController _heading;
   late final TextEditingController _desc;
   late final TextEditingController _link;
+  final _scrollController = ScrollController();
   List<String> _images = [];
   bool _saving = false;
   bool _uploading = false;
@@ -387,6 +606,7 @@ class _ProjectFormDialogState extends State<_ProjectFormDialog> {
   @override
   void dispose() {
     _heading.dispose(); _desc.dispose(); _link.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -443,7 +663,10 @@ class _ProjectFormDialogState extends State<_ProjectFormDialog> {
     return Dialog(
       backgroundColor: const Color(0xFF1E293B),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: SingleChildScrollView(
+      child: KeyboardScrollShortcuts(
+        controller: _scrollController,
+        child: SingleChildScrollView(
+          controller: _scrollController,
         padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -509,6 +732,7 @@ class _ProjectFormDialogState extends State<_ProjectFormDialog> {
             ),
           ],
         ),
+        ),
       ),
     );
   }
@@ -523,6 +747,14 @@ class _SkillsEditor extends StatefulWidget {
 }
 
 class _SkillsEditorState extends State<_SkillsEditor> {
+  final _skillsScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _skillsScrollController.dispose();
+    super.dispose();
+  }
+
   void _showForm({Skill? skill}) {
     final nameCtrl = TextEditingController(text: skill?.name ?? '');
     final urlCtrl = TextEditingController(text: skill?.imageUrl ?? '');
@@ -536,7 +768,8 @@ class _SkillsEditorState extends State<_SkillsEditor> {
           return AlertDialog(
             backgroundColor: const Color(0xFF1E293B),
             title: Text(skill == null ? 'Add Skill' : 'Edit Skill', style: GoogleFonts.poppins(color: Colors.white)),
-            content: Column(
+            content: KeyboardSingleChildScrollView(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _field(nameCtrl, 'Skill Name', Icons.code),
@@ -567,6 +800,7 @@ class _SkillsEditorState extends State<_SkillsEditor> {
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E40AF), foregroundColor: Colors.white),
                 )
               ],
+            ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.white54))),
@@ -618,31 +852,38 @@ class _SkillsEditorState extends State<_SkillsEditor> {
               ),
             ),
             Expanded(
-              child: Wrap(
-                children: skills.map((s) => Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Chip(
-                    backgroundColor: const Color(0xFF1E293B),
-                    avatar: s.imageUrl.isNotEmpty 
-                        ? ClipOval(
-                            child: Image.network(
-                                s.imageUrl, 
-                                width: 24, height: 24, fit: BoxFit.cover,
-                                errorBuilder: (_,__,___) => const Icon(Icons.broken_image, size: 16)
-                            )
-                          ) 
-                        : null,
-                    label: Text(s.name, style: GoogleFonts.poppins(color: Colors.white)),
-                    deleteIcon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                    onDeleted: () async {
-                      try {
-                        await widget.service.deleteSkill(s.id);
-                      } catch (e) {
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.redAccent));
-                      }
-                    },
+              child: KeyboardScrollShortcuts(
+                controller: _skillsScrollController,
+                child: SingleChildScrollView(
+                  controller: _skillsScrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Wrap(
+                    children: skills.map((s) => Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Chip(
+                        backgroundColor: const Color(0xFF1E293B),
+                        avatar: s.imageUrl.isNotEmpty 
+                            ? ClipOval(
+                                child: Image.network(
+                                    s.imageUrl, 
+                                    width: 24, height: 24, fit: BoxFit.cover,
+                                    errorBuilder: (_,__,___) => const Icon(Icons.broken_image, size: 16)
+                                )
+                              ) 
+                            : null,
+                        label: Text(s.name, style: GoogleFonts.poppins(color: Colors.white)),
+                        deleteIcon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                        onDeleted: () async {
+                          try {
+                            await widget.service.deleteSkill(s.id);
+                          } catch (e) {
+                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.redAccent));
+                          }
+                        },
+                      ),
+                    )).toList(),
                   ),
-                )).toList(),
+                ),
               ),
             ),
           ],
@@ -661,6 +902,14 @@ class _SocialsEditor extends StatefulWidget {
 }
 
 class _SocialsEditorState extends State<_SocialsEditor> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _showForm({SocialLink? link}) {
     final usernameCtrl = TextEditingController(text: link?.username ?? '');
     final urlCtrl = TextEditingController(text: link?.linkUrl ?? '');
@@ -675,7 +924,7 @@ class _SocialsEditorState extends State<_SocialsEditor> {
           return AlertDialog(
             backgroundColor: const Color(0xFF1E293B),
             title: Text(link == null ? 'Add Social Link' : 'Edit Social Link', style: GoogleFonts.poppins(color: Colors.white)),
-            content: SingleChildScrollView(
+            content: KeyboardSingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -760,7 +1009,10 @@ class _SocialsEditorState extends State<_SocialsEditor> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
+              child: KeyboardScrollShortcuts(
+                controller: _scrollController,
+                child: ListView.builder(
+                  controller: _scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: links.length,
                 itemBuilder: (context, i) {
@@ -804,6 +1056,7 @@ class _SocialsEditorState extends State<_SocialsEditor> {
                     ),
                   ).animate().fadeIn().slideX(begin: 0.1);
                 },
+                ),
               ),
             ),
           ],
@@ -872,6 +1125,14 @@ class _CertificatesEditor extends StatefulWidget {
 }
 
 class _CertificatesEditorState extends State<_CertificatesEditor> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _showForm({Certificate? cert}) {
     final titleCtrl = TextEditingController(text: cert?.title ?? '');
     final issuerCtrl = TextEditingController(text: cert?.issuer ?? '');
@@ -888,7 +1149,7 @@ class _CertificatesEditorState extends State<_CertificatesEditor> {
           return AlertDialog(
             backgroundColor: const Color(0xFF1E293B),
             title: Text(cert == null ? 'Add Certificate' : 'Edit Certificate', style: GoogleFonts.poppins(color: Colors.white)),
-            content: SingleChildScrollView(
+            content: KeyboardSingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -975,7 +1236,10 @@ class _CertificatesEditorState extends State<_CertificatesEditor> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
+              child: KeyboardScrollShortcuts(
+                controller: _scrollController,
+                child: ListView.builder(
+                  controller: _scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: certs.length,
                 itemBuilder: (context, i) {
@@ -1022,6 +1286,7 @@ class _CertificatesEditorState extends State<_CertificatesEditor> {
                     ),
                   ).animate().fadeIn().slideX(begin: 0.1);
                 },
+                ),
               ),
             ),
           ],
@@ -1040,6 +1305,14 @@ class _ExperienceEditor extends StatefulWidget {
 }
 
 class _ExperienceEditorState extends State<_ExperienceEditor> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _showForm({Experience? exp}) {
     final roleCtrl = TextEditingController(text: exp?.role ?? '');
     final companyCtrl = TextEditingController(text: exp?.company ?? '');
@@ -1054,7 +1327,7 @@ class _ExperienceEditorState extends State<_ExperienceEditor> {
           return AlertDialog(
             backgroundColor: const Color(0xFF1E293B),
             title: Text(exp == null ? 'Add Experience' : 'Edit Experience', style: GoogleFonts.poppins(color: Colors.white)),
-            content: SingleChildScrollView(
+            content: KeyboardSingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1115,7 +1388,10 @@ class _ExperienceEditorState extends State<_ExperienceEditor> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
+              child: KeyboardScrollShortcuts(
+                controller: _scrollController,
+                child: ListView.builder(
+                  controller: _scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: exps.length,
                 itemBuilder: (context, i) {
@@ -1156,6 +1432,7 @@ class _ExperienceEditorState extends State<_ExperienceEditor> {
                     ),
                   ).animate().fadeIn().slideX(begin: 0.1);
                 },
+                ),
               ),
             ),
           ],

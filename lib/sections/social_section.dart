@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/portfolio_models.dart';
 import '../services/firebase_service.dart';
+import '../widgets/maintenance_public_layer.dart';
 
 class SocialSection extends StatelessWidget {
   const SocialSection({super.key});
@@ -13,7 +14,28 @@ class SocialSection extends StatelessWidget {
     return StreamBuilder<List<SocialLink>>(
       stream: FirebaseService().getSocialLinks(),
       builder: (context, snap) {
-        if (!snap.hasData || snap.data!.isEmpty) return const SizedBox.shrink();
+        if (!snap.hasData) {
+          return const SizedBox.shrink();
+        }
+        if (snap.data!.isEmpty) {
+          if (!MaintenanceModeScope.of(context)) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+            child: Column(
+              children: [
+                Text(
+                  'Find Me On',
+                  style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13, letterSpacing: 2),
+                ).animate().fadeIn(),
+                const SizedBox(height: 16),
+                const MaintenanceEmptySectionFiller(
+                  maxHeight: 180,
+                  caption: 'Social links loading soon — maintenance mode.',
+                ),
+              ],
+            ),
+          );
+        }
         final links = snap.data!;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 20),

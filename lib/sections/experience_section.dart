@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/portfolio_models.dart';
 import '../services/firebase_service.dart';
 import '../widgets/custom_loader.dart';
+import '../widgets/maintenance_public_layer.dart';
 
 class ExperienceSection extends StatelessWidget {
   const ExperienceSection({super.key});
@@ -17,7 +18,37 @@ class ExperienceSection extends StatelessWidget {
           return const SizedBox(height: 200, child: CustomLoader(text: 'Loading experience...'));
         }
         final experiences = snap.data!;
-        if (experiences.isEmpty) return const SizedBox.shrink();
+        if (experiences.isEmpty) {
+          if (!MaintenanceModeScope.of(context)) return const SizedBox.shrink();
+          final screenWidth = MediaQuery.of(context).size.width;
+          final isDesktop = screenWidth > 800;
+          final isMobile = screenWidth < 600;
+          return Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop ? 100 : 24,
+              vertical: 60,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Experience',
+                  style: GoogleFonts.poppins(
+                    fontSize: isDesktop ? 40 : (isMobile ? 28 : 32),
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2),
+                const SizedBox(height: 10),
+                Container(width: 60, height: 4, color: const Color(0xFF38BDF8)).animate().scaleX(delay: 200.ms),
+                const SizedBox(height: 24),
+                const MaintenanceEmptySectionFiller(
+                  caption: 'Updating experience highlights — thanks for your patience.',
+                ),
+              ],
+            ),
+          );
+        }
 
         final screenWidth = MediaQuery.of(context).size.width;
         final isDesktop = screenWidth > 800;

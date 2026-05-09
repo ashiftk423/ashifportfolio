@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/keyboard_scroll_shortcuts.dart';
 import 'admin_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -15,6 +16,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
   bool _loading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
@@ -42,6 +46,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -51,12 +58,18 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Container(
+      body: KeyboardScrollShortcuts(
+        controller: _scrollController,
+        child: FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: Center(
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+              padding: const EdgeInsets.all(24),
+              child: Form(
+                key: _formKey,
+                child: Container(
               width: 420,
               padding: const EdgeInsets.all(40),
               decoration: BoxDecoration(
@@ -117,12 +130,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 36),
 
+                  AutofillGroup(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                   // Email
                   TextFormField(
                     controller: _emailController,
+                    focusNode: _emailFocus,
                     style: const TextStyle(color: Colors.white),
                     decoration: _inputDecoration('Email', Icons.email_rounded),
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.email],
+                    onFieldSubmitted: (_) {
+                      FocusScope.of(context).requestFocus(_passwordFocus);
+                    },
                     validator: (v) => v == null || !v.contains('@') ? 'Enter valid email' : null,
                   ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.1),
 
@@ -131,8 +154,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   // Password
                   TextFormField(
                     controller: _passwordController,
+                    focusNode: _passwordFocus,
                     style: const TextStyle(color: Colors.white),
                     obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.password],
+                    onFieldSubmitted: (_) {
+                      if (!_loading) _login();
+                    },
                     decoration: _inputDecoration('Password', Icons.lock_rounded).copyWith(
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -144,6 +173,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     validator: (v) => v == null || v.length < 6 ? 'Min 6 characters' : null,
                   ).animate().fadeIn(delay: 500.ms).slideX(begin: -0.1),
+                      ],
+                    ),
+                  ),
 
                   if (_errorMessage != null) ...[
                     const SizedBox(height: 16),
@@ -169,6 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: double.infinity,
                     height: 54,
                     child: ElevatedButton(
+                      autofocus: false,
                       onPressed: _loading ? null : _login,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF38BDF8),
@@ -199,6 +232,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+      ),
+    ),
     );
   }
 

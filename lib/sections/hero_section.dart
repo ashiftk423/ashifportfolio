@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/portfolio_models.dart';
 import '../services/firebase_service.dart';
 import '../widgets/custom_loader.dart';
@@ -33,6 +35,45 @@ class _HeroContent extends StatefulWidget {
 
 class _HeroContentState extends State<_HeroContent> {
   bool _isHovered = false;
+
+  Future<void> _openCv(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('CV link is invalid. Update it in Admin.', style: GoogleFonts.poppins()),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final ok = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: kIsWeb ? '_blank' : null,
+      );
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open CV.', style: GoogleFonts.poppins()),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e', style: GoogleFonts.poppins()),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -150,8 +191,8 @@ class _HeroContentState extends State<_HeroContent> {
           runSpacing: 12,
           children: [
             if (widget.info.cvUrl.isNotEmpty)
-              _glowButton(context, 'Download CV', Icons.download_rounded, onTap: () async {
-                // URL launcher handles this
+              _glowButton(context, 'Download CV', Icons.download_rounded, onTap: () {
+                _openCv(widget.info.cvUrl);
               })
                   .animate(delay: 600.ms)
                   .scale(begin: const Offset(0.8, 0.8), curve: Curves.elasticOut),
@@ -227,6 +268,7 @@ class _HeroContentState extends State<_HeroContent> {
             child: widget.info.photoUrl.isNotEmpty
                 ? Image.network(
                     widget.info.photoUrl,
+                    key: ValueKey<String>(widget.info.photoUrl),
                     width: size,
                     height: size,
                     fit: BoxFit.cover,

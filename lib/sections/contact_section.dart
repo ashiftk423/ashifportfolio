@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -42,10 +43,35 @@ class _ContactContent extends StatelessWidget {
   }
 
   Future<void> _launch(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
+    final openInNewTab = kIsWeb && (uri.isScheme('http') || uri.isScheme('https'));
+    await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+      webOnlyWindowName: openInNewTab ? '_blank' : null,
+    );
+  }
+
+  String _telUri(String phone) {
+    final cleaned = phone.replaceAll(RegExp(r'[\s-]'), '');
+    return 'tel:${Uri.encodeComponent(cleaned)}';
+  }
+
+  String _waUri(String wa) {
+    final digits = wa.replaceAll(RegExp(r'[^\d]'), '');
+    if (digits.isEmpty) return 'https://wa.me/';
+    return 'https://wa.me/$digits';
+  }
+
+  /// Responsive width so 1 / 2 / 3 cards fit per row on phone / tablet / desktop.
+  double _contactCardWidth(double screenWidth, bool isDesktop) {
+    final horizontalPadding = isDesktop ? 200.0 : 48.0;
+    final inner = screenWidth - horizontalPadding;
+    final spacing = 20.0;
+    if (screenWidth < 600) return inner.clamp(200.0, 520.0);
+    if (screenWidth < 960) return ((inner - spacing) / 2).clamp(240.0, 400.0);
+    return ((inner - spacing * 2) / 3).clamp(260.0, 360.0);
   }
 
   @override
@@ -53,6 +79,7 @@ class _ContactContent extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth > 800;
     final isMobile = screenWidth < 600;
+    final cardWidth = _contactCardWidth(screenWidth, isDesktop);
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: isDesktop ? 100 : 24, vertical: 20),
@@ -75,23 +102,22 @@ class _ContactContent extends StatelessWidget {
           ).animate().fadeIn(delay: 200.ms),
           const SizedBox(height: 50),
 
-          // Contact Cards
+          // Contact Cards (phones → email → WhatsApp; multiple numbers wrap cleanly)
           Wrap(
             spacing: 20,
             runSpacing: 20,
             alignment: WrapAlignment.center,
             children: [
-              if (info.phone.isNotEmpty)
+              for (var i = 0; i < info.phones.length; i++)
                 _buildContactCard(
                   context,
                   icon: Icons.phone_rounded,
-                  label: 'Phone',
-                  value: info.phone,
+                  label: info.phones.length > 1 ? 'Phone ${i + 1}' : 'Phone',
+                  value: info.phones[i],
                   color: const Color(0xFF22C55E),
-                  onTap: () => _launch('tel:${info.phone}'),
-                  onCopy: () => _copy(context, info.phone),
-                  isMobile: isMobile,
-                  screenWidth: screenWidth,
+                  onTap: () => _launch(_telUri(info.phones[i])),
+                  onCopy: () => _copy(context, info.phones[i]),
+                  width: cardWidth,
                 ),
 
               if (info.email.isNotEmpty)
@@ -103,21 +129,19 @@ class _ContactContent extends StatelessWidget {
                   color: const Color(0xFF38BDF8),
                   onTap: () => _launch('mailto:${info.email}'),
                   onCopy: () => _copy(context, info.email),
-                  isMobile: isMobile,
-                  screenWidth: screenWidth,
+                  width: cardWidth,
                 ),
 
-              if (info.whatsapp.isNotEmpty)
+              for (var i = 0; i < info.whatsapps.length; i++)
                 _buildContactCard(
                   context,
                   icon: Icons.chat_rounded,
-                  label: 'WhatsApp',
-                  value: info.whatsapp,
+                  label: info.whatsapps.length > 1 ? 'WhatsApp ${i + 1}' : 'WhatsApp',
+                  value: info.whatsapps[i],
                   color: const Color(0xFF25D366),
-                  onTap: () => _launch('https://wa.me/${info.whatsapp.replaceAll('+', '').replaceAll(' ', '')}'),
-                  onCopy: () => _copy(context, info.whatsapp),
-                  isMobile: isMobile,
-                  screenWidth: screenWidth,
+                  onTap: () => _launch(_waUri(info.whatsapps[i])),
+                  onCopy: () => _copy(context, info.whatsapps[i]),
+                  width: cardWidth,
                 ),
             ],
           ),
@@ -180,13 +204,12 @@ class _ContactContent extends StatelessWidget {
     required Color color,
     required VoidCallback onTap,
     required VoidCallback onCopy,
-    required bool isMobile,
-    required double screenWidth,
+    required double width,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: isMobile ? screenWidth - 48 : 280,
+        width: width,
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
           color: const Color(0xFF1E293B),

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/portfolio_models.dart';
 import '../services/firebase_service.dart';
 import '../widgets/custom_loader.dart';
+import '../widgets/maintenance_public_layer.dart';
 
 class CertificatesSection extends StatelessWidget {
   const CertificatesSection({super.key});
@@ -18,7 +19,38 @@ class CertificatesSection extends StatelessWidget {
           return const SizedBox(height: 200, child: CustomLoader(text: 'Loading certificates...'));
         }
         final certs = snap.data!;
-        if (certs.isEmpty) return const SizedBox.shrink();
+        if (certs.isEmpty) {
+          if (!MaintenanceModeScope.of(context)) return const SizedBox.shrink();
+          final screenWidth = MediaQuery.of(context).size.width;
+          final isDesktop = screenWidth > 800;
+          final isMobile = screenWidth < 600;
+          return Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop ? 100 : 24,
+              vertical: 60,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Certificates',
+                  style: GoogleFonts.poppins(
+                    fontSize: isDesktop ? 40 : (isMobile ? 28 : 32),
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2),
+                const SizedBox(height: 10),
+                Container(width: 60, height: 4, color: const Color(0xFF38BDF8)).animate().scaleX(delay: 200.ms),
+                const SizedBox(height: 24),
+                const MaintenanceEmptySectionFiller(
+                  caption: 'Certificates section coming back shortly.',
+                  imageLeadingOnWide: false,
+                ),
+              ],
+            ),
+          );
+        }
 
         final screenWidth = MediaQuery.of(context).size.width;
         final isDesktop = screenWidth > 800;

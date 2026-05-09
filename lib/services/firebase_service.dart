@@ -39,6 +39,31 @@ class FirebaseService {
     }
   }
 
+  /// Merges only the given fields (e.g. after a Storage upload) so the live site updates immediately.
+  Future<void> mergeProfileFields(Map<String, dynamic> fields) async {
+    try {
+      _log('Merging ProfileInfo fields: ${fields.keys.join(", ")}...');
+      await _firestore.collection('info').doc('main').set(fields, SetOptions(merge: true));
+      _log('ProfileInfo fields merged.');
+    } catch (e, stack) {
+      _log('Failed to merge ProfileInfo', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
+  /// Deletes a file in Firebase Storage from its download URL. No-op if URL is empty or invalid.
+  Future<void> deleteStorageFileByUrl(String? downloadUrl) async {
+    if (downloadUrl == null || downloadUrl.isEmpty) return;
+    try {
+      final ref = _storage.refFromURL(downloadUrl);
+      await ref.delete();
+      _log('Deleted storage object for URL.');
+    } catch (e, stack) {
+      _log('deleteStorageFileByUrl skipped or failed (object missing/invalid URL is OK)',
+          error: e, stackTrace: stack);
+    }
+  }
+
   // PROJECTS
   Stream<List<Project>> getProjects() {
     _log('Starting stream for Projects...');
